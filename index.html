@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Control de Gastos y Ahorro</title>
+<link rel="icon" href="data:,">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">💰</span>
+      <div>
+        <h1>Control de Gastos y Ahorro</h1>
+        <p class="subtitle">Presupuesto familiar mensual</p>
+      </div>
+    </div>
+    <div class="month-picker">
+      <button id="prevMonth" class="icon-btn" title="Mes anterior">◀</button>
+      <select id="monthSelect"></select>
+      <input id="yearInput" type="number" min="2000" max="2100" />
+      <button id="nextMonth" class="icon-btn" title="Mes siguiente">▶</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="summary-grid">
+      <div class="card summary-card income">
+        <span class="card-icon">💵</span>
+        <span class="card-label">Ingresos del mes</span>
+        <div class="card-input-row">
+          <span class="currency-prefix">$</span>
+          <input type="text" inputmode="decimal" id="ingresoInput" class="card-value-input" placeholder="0" />
+        </div>
+      </div>
+      <div class="card summary-card expense">
+        <span class="card-icon">🧾</span>
+        <span class="card-label">Gastos del mes</span>
+        <span class="card-value" id="sumEgresos">$0</span>
+      </div>
+      <div class="card summary-card balance" id="balanceCard">
+        <span class="card-icon">⚖️</span>
+        <span class="card-label">Saldo del mes</span>
+        <span class="card-value" id="sumSaldo">$0</span>
+      </div>
+      <div class="card summary-card savings">
+        <span class="card-icon">🏦</span>
+        <span class="card-label">Ahorro acumulado</span>
+        <span class="card-value" id="sumAhorro">$0</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Gastos</h2>
+        <button class="add-btn" id="addEgreso">+ Agregar</button>
+      </div>
+      <div class="table-wrap">
+        <table id="tablaEgresos">
+          <thead>
+            <tr><th>Concepto</th><th>Presupuestado</th><th>Real</th><th>Diferencia</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>🐜 Gastos hormiga</h2>
+        <button class="add-btn" id="addSeccionHormiga">+ Agregar sección</button>
+      </div>
+      <p class="hormiga-hint">Agrupa gastos pequeños por sección y sub-sección. Ej.: Comida → Empanada, Carro → Llantas, Iglesia → Ofrenda.</p>
+      <div id="hormigaContainer"></div>
+      <p class="empty-hint-static" id="hormigaEmptyHint">Aún no hay secciones. Usa "+ Agregar sección" para crear una.</p>
+    </section>
+
+    <section class="panels">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Gastos por categoría</h2>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chartEgresos"></canvas>
+          <p class="empty-hint" id="chartEmptyHint">Registra gastos reales para ver la distribución.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Historial de saldo</h2>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chartHistorial"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Datos</h2>
+      </div>
+      <div class="data-actions">
+        <button id="exportExcelBtn" class="primary-btn">📊 Exportar a Excel</button>
+        <button id="exportBtn" class="secondary-btn">⬇ Exportar respaldo (JSON)</button>
+        <label class="secondary-btn file-label">
+          ⬆ Importar respaldo
+          <input type="file" id="importInput" accept="application/json" hidden />
+        </label>
+        <button id="resetMonthBtn" class="danger-btn">Vaciar mes actual</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Tus datos se guardan solo en este navegador (localStorage). Exporta un respaldo periódicamente.</p>
+  </footer>
+</div>
+
+<template id="rowEgresoTemplate">
+  <tr>
+    <td><input type="text" class="concept-input" placeholder="Concepto" /></td>
+    <td><input type="text" inputmode="decimal" class="budget-input" placeholder="0" /></td>
+    <td><input type="text" inputmode="decimal" class="actual-input" placeholder="0" /></td>
+    <td class="diff-cell">$0</td>
+  </tr>
+</template>
+
+<template id="seccionHormigaTemplate">
+  <div class="hormiga-seccion">
+    <div class="hormiga-seccion-header">
+      <input type="text" class="hormiga-seccion-name" placeholder="Sección (ej. Comida)" />
+      <span class="hormiga-seccion-total">$0</span>
+      <button class="add-item-btn" title="Agregar sub-sección">+ Sub-sección</button>
+      <button class="del-seccion-btn" title="Eliminar sección">✕</button>
+    </div>
+    <table class="hormiga-items-table">
+      <thead><tr><th>Sub-sección</th><th>Saldo</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="hormiga-empty-items">Sin sub-secciones aún. Usa "+ Sub-sección".</p>
+  </div>
+</template>
+
+<template id="itemHormigaTemplate">
+  <tr>
+    <td><input type="text" class="hormiga-item-name" placeholder="Sub-sección (ej. Empanada)" /></td>
+    <td><input type="text" inputmode="decimal" class="hormiga-item-saldo" placeholder="0" /></td>
+    <td><button class="del-item-btn" title="Eliminar">✕</button></td>
+  </tr>
+</template>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
