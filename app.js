@@ -1,622 +1,515 @@
 (() => {
   "use strict";
 
+  /* ---------- Constantes ---------- */
   const STORAGE_KEY = "controlGastosData.v1";
-
-  const MESES = [
-    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-  ];
-
   const DEFAULT_EGRESOS = [
-    { concepto: "Admón / Parqueadero", presupuestado: 212000 },
-    { concepto: "Coopcafam", presupuestado: 91000 },
-    { concepto: "Esposa", presupuestado: 150000 },
-    { concepto: "Celular", presupuestado: 53000 },
-    { concepto: "Agua", presupuestado: 90000 },
-    { concepto: "Luz", presupuestado: 150000 },
-    { concepto: "Gas", presupuestado: 20000 },
-    { concepto: "Parqueo moto", presupuestado: 42000 },
-    { concepto: "Crédito 1", presupuestado: 215000 },
-    { concepto: "Claro hogar", presupuestado: 60000 },
-    { concepto: "Gasolina", presupuestado: 250000 },
-    { concepto: "Verduras", presupuestado: 120000 },
-    { concepto: "Mercado", presupuestado: 200000 },
-    { concepto: "Carnes", presupuestado: 150000 },
-    { concepto: "Huevos", presupuestado: 34000 },
-    { concepto: "Almuerzo fin de semana", presupuestado: 150000 },
-    { concepto: "Transporte", presupuestado: 40000 },
-    { concepto: "Spotify", presupuestado: 10000 },
-    { concepto: "Otros varios", presupuestado: 220000 },
-    { concepto: "Cafam / citas", presupuestado: 80000 },
-    { concepto: "Deuda anterior", presupuestado: 0 }
+    ["Admón / Parqueadero", 212000],
+    ["Coopcafam", 91000],
+    ["Esposa", 150000],
+    ["Celular", 53000],
+    ["Agua", 90000],
+    ["Luz", 150000],
+    ["Gas", 20000],
+    ["Parqueo moto", 42000],
+    ["Crédito 1", 215000],
+    ["Claro hogar", 60000],
+    ["Gasolina", 250000],
+    ["Verduras", 120000],
+    ["Mercado", 200000],
+    ["Carnes", 150000],
+    ["Huevos", 34000],
+    ["Almuerzo fin de semana", 150000],
+    ["Transporte", 40000],
+    ["Spotify", 10000],
+    ["Otros varios", 220000],
+    ["Cafam / citas", 80000],
+    ["Deuda anterior", 0],
   ];
+  const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+  const MESES_CORTOS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  const CHART_COLORS = ["#4f46e5", "#7c3aed", "#db2777", "#dc2626", "#ea580c", "#d97706", "#65a30d", "#059669", "#0891b2", "#2563eb", "#9333ea", "#c026d3", "#e11d48", "#0d9488", "#ca8a04", "#4338ca"];
 
-  const fmt = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
-  const money = (n) => fmt.format(Math.round(n || 0));
-  const numFmt = new Intl.NumberFormat("es-CO");
+  const numFmt = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 });
+  const money = (n) => (n < 0 ? "-$" : "$") + numFmt.format(Math.abs(Math.round(n || 0)));
+  const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+  const $ = (id) => document.getElementById(id);
 
-  // Los montos se escriben a la colombiana (punto = separador de miles), así
-  // que estos campos son texto: se parsean quitando todo lo que no sea dígito.
+  /* ---------- Inputs de dinero ---------- */
   function parseMoneyInput(str) {
-    const digits = String(str || "").replace(/[^\d]/g, "");
+    const digits = String(str ?? "").replace(/[^\d]/g, "");
     return digits ? Number(digits) : 0;
   }
-
   function formatMoneyInput(n) {
     return n ? numFmt.format(n) : "";
   }
-
-  function wireMoneyInput(input, onChange) {
+  function wireMoneyInput(input, value, onChange) {
+    input.value = formatMoneyInput(value);
     input.addEventListener("focus", () => {
-      const raw = parseMoneyInput(input.value);
-      input.value = raw || "";
+      const n = parseMoneyInput(input.value);
+      input.value = n ? String(n) : "";
+      requestAnimationFrame(() => { try { input.select(); } catch (e) { /* noop */ } });
     });
-    input.addEventListener("input", () => {
-      onChange(parseMoneyInput(input.value));
-    });
-    input.addEventListener("blur", () => {
-      input.value = formatMoneyInput(parseMoneyInput(input.value));
-    });
+    input.addEventListener("input", () => onChange(parseMoneyInput(input.value)));
+    input.addEventListener("blur", () => { input.value = formatMoneyInput(parseMoneyInput(input.value)); });
   }
 
-  function uid() {
-    return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  /* ---------- Estado ---------- */
+  function defaultEgresos() {
+    return DEFAULT_EGRESOS.map(([concepto, presupuestado]) => ({ id: uid(), concepto, presupuestado, real: 0, fijo: true }));
   }
-
-  function loadData() {
+  function newMonth() {
+    return { ingresoReal: 0, egresos: defaultEgresos(), gastosHormiga: [] };
+  }
+  function isValidState(s) {
+    return s && typeof s === "object" && s.months && typeof s.months === "object";
+  }
+  function normalizeMonth(m) {
+    if (!m || typeof m !== "object") return newMonth();
+    // compatibilidad: si ingresoReal llegó como arreglo, sumarlo
+    if (Array.isArray(m.ingresoReal)) m.ingresoReal = m.ingresoReal.reduce((a, x) => a + (Number(x && x.real) || 0), 0);
+    m.ingresoReal = Number(m.ingresoReal) || 0;
+    m.egresos = Array.isArray(m.egresos) ? m.egresos.map((e) => ({
+      id: e.id || uid(), concepto: String(e.concepto ?? ""), presupuestado: Number(e.presupuestado) || 0, real: Number(e.real) || 0, fijo: !!e.fijo,
+    })) : defaultEgresos();
+    m.gastosHormiga = Array.isArray(m.gastosHormiga) ? m.gastosHormiga.map((s) => ({
+      id: s.id || uid(), nombre: String(s.nombre ?? ""),
+      items: Array.isArray(s.items) ? s.items.map((it) => ({ id: it.id || uid(), nombre: String(it.nombre ?? ""), saldo: Number(it.saldo) || 0 })) : [],
+    })) : [];
+    return m;
+  }
+  function normalizeState(s) {
+    const out = { months: {}, updatedAt: Number(s.updatedAt) || 0 };
+    Object.keys(s.months).forEach((k) => { if (/^\d{4}-\d{2}$/.test(k)) out.months[k] = normalizeMonth(s.months[k]); });
+    return out;
+  }
+  function loadLocal() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return { months: {} };
-      const parsed = JSON.parse(raw);
-      if (!parsed.months) return { months: {} };
-      return parsed;
-    } catch (e) {
-      console.warn("No se pudo leer el almacenamiento local", e);
-      return { months: {} };
-    }
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (isValidState(parsed)) return normalizeState(parsed);
+      }
+    } catch (e) { /* sin localStorage */ }
+    return { months: {}, updatedAt: 0 };
   }
 
-  function saveData() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (e) {
-      console.warn("No se pudo guardar el almacenamiento local", e);
-    }
-  }
+  let state = loadLocal();
+  const today = new Date();
+  let currentKey = keyOf(today.getFullYear(), today.getMonth() + 1);
 
-  let state = loadData();
-
-  function monthKey(year, monthIndex) {
-    return `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+  function keyOf(y, m) { return `${y}-${String(m).padStart(2, "0")}`; }
+  function splitKey(k) { const [y, m] = k.split("-").map(Number); return { y, m }; }
+  function shiftKey(k, delta) {
+    const { y, m } = splitKey(k);
+    const d = new Date(y, m - 1 + delta, 1);
+    return keyOf(d.getFullYear(), d.getMonth() + 1);
   }
-
-  function makeRow(concepto, presupuestado) {
-    return { id: uid(), concepto, presupuestado: presupuestado || 0, real: 0 };
+  function labelOf(k, short) {
+    const { y, m } = splitKey(k);
+    return short ? `${MESES_CORTOS[m - 1]} ${String(y).slice(2)}` : `${MESES[m - 1]} ${y}`;
   }
-
-  function ensureMonth(key) {
-    if (!state.months[key]) {
-      state.months[key] = {
-        ingresoReal: 0,
-        egresos: DEFAULT_EGRESOS.map((e) => makeRow(e.concepto, e.presupuestado)),
-        gastosHormiga: []
-      };
-      saveData();
-    }
-    const month = state.months[key];
-    if (!month.gastosHormiga) month.gastosHormiga = [];
-    return month;
+  function ensureMonth(k) {
+    if (!state.months[k]) { state.months[k] = newMonth(); save(); }
+    return state.months[k];
   }
-
-  function seccionHormigaTotal(seccion) {
-    return (seccion.items || []).reduce((s, it) => s + (it.saldo || 0), 0);
-  }
-
-  function gastosHormigaTotal(month) {
-    return (month.gastosHormiga || []).reduce((s, seccion) => s + seccionHormigaTotal(seccion), 0);
-  }
+  const cur = () => ensureMonth(currentKey);
 
   function monthTotals(month) {
-    const ingresosReal = month.ingresoReal || 0;
-    const egresosPresupuestado = month.egresos.reduce((s, r) => s + (r.presupuestado || 0), 0);
-    const egresosRealTabla = month.egresos.reduce((s, r) => s + (r.real || 0), 0);
-    const hormigaTotal = gastosHormigaTotal(month);
+    const ingresosReal = Number(month.ingresoReal) || 0;
+    const egresosPresupuestado = month.egresos.reduce((a, e) => a + (e.presupuestado || 0), 0);
+    const egresosRealTabla = month.egresos.reduce((a, e) => a + (e.real || 0), 0);
+    const hormigaTotal = month.gastosHormiga.reduce((a, s) => a + seccionTotal(s), 0);
     const egresosReal = egresosRealTabla + hormigaTotal;
-    return {
-      ingresosReal,
-      egresosPresupuestado,
-      egresosReal,
-      egresosRealTabla,
-      hormigaTotal,
-      saldo: ingresosReal - egresosReal
-    };
+    return { ingresosReal, egresosPresupuestado, egresosRealTabla, hormigaTotal, egresosReal, saldo: ingresosReal - egresosReal };
   }
-
+  function seccionTotal(s) { return s.items.reduce((a, it) => a + (it.saldo || 0), 0); }
   function ahorroAcumuladoHasta(key) {
-    const sortedKeys = Object.keys(state.months).sort();
-    let acumulado = 0;
-    for (const k of sortedKeys) {
-      if (k > key) break;
-      acumulado += monthTotals(state.months[k]).saldo;
+    return Object.keys(state.months).filter((k) => k <= key).sort()
+      .reduce((a, k) => a + monthTotals(state.months[k]).saldo, 0);
+  }
+
+  /* ---------- Persistencia (localStorage + cuenta) ---------- */
+  let cloud = null; // { ref }
+  let cloudTimer = null, cloudBusy = false, cloudDirty = false;
+
+  function save() {
+    state.updatedAt = Date.now();
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* noop */ }
+    if (cloud) { cloudDirty = true; clearTimeout(cloudTimer); cloudTimer = setTimeout(flushCloud, 1200); }
+  }
+  async function flushCloud() {
+    if (!cloud || cloudBusy || !cloudDirty) return;
+    cloudBusy = true; cloudDirty = false;
+    try {
+      await cloud.ref.set({ state: JSON.parse(JSON.stringify(state)), updatedAt: state.updatedAt });
+      setStatus("Guardado en tu cuenta · " + new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" }));
+    } catch (e) {
+      if (e && e.code === "invalid_argument") { cloud = null; setStatus("Guardado solo en este navegador."); }
+      else { cloudDirty = true; setStatus("No se pudo sincronizar; se reintentará."); }
+    } finally {
+      cloudBusy = false;
+      if (cloudDirty && cloud) { clearTimeout(cloudTimer); cloudTimer = setTimeout(flushCloud, 3000); }
     }
-    return acumulado;
   }
-
-  const now = new Date();
-  let currentYear = now.getFullYear();
-  let currentMonth = now.getMonth();
-
-  const monthSelect = document.getElementById("monthSelect");
-  const yearInput = document.getElementById("yearInput");
-  const prevMonthBtn = document.getElementById("prevMonth");
-  const nextMonthBtn = document.getElementById("nextMonth");
-
-  MESES.forEach((m, i) => {
-    const opt = document.createElement("option");
-    opt.value = i;
-    opt.textContent = m;
-    monthSelect.appendChild(opt);
-  });
-
-  function syncPickerUI() {
-    monthSelect.value = String(currentMonth);
-    yearInput.value = String(currentYear);
-  }
-
-  function changeMonth(delta) {
-    let m = currentMonth + delta;
-    let y = currentYear;
-    if (m < 0) { m = 11; y -= 1; }
-    if (m > 11) { m = 0; y += 1; }
-    currentMonth = m;
-    currentYear = y;
-    syncPickerUI();
-    render();
-  }
-
-  prevMonthBtn.addEventListener("click", () => changeMonth(-1));
-  nextMonthBtn.addEventListener("click", () => changeMonth(1));
-  monthSelect.addEventListener("change", () => {
-    currentMonth = Number(monthSelect.value);
-    render();
-  });
-  yearInput.addEventListener("change", () => {
-    const y = Number(yearInput.value);
-    if (Number.isFinite(y) && y >= 2000 && y <= 2100) {
-      currentYear = y;
-      render();
-    }
-  });
-
-  const tablaEgresosBody = document.querySelector("#tablaEgresos tbody");
-  const rowEgresoTemplate = document.getElementById("rowEgresoTemplate");
-  const ingresoInput = document.getElementById("ingresoInput");
-
-  wireMoneyInput(ingresoInput, (value) => {
-    const month = ensureMonth(monthKey(currentYear, currentMonth));
-    month.ingresoReal = value;
-    saveData();
-    renderSummaryAndCharts();
-  });
-
-  function buildEgresoRow(data) {
-    const frag = rowEgresoTemplate.content.cloneNode(true);
-    const tr = frag.querySelector("tr");
-    tr.dataset.id = data.id;
-    const conceptInput = tr.querySelector(".concept-input");
-    const budgetInput = tr.querySelector(".budget-input");
-    const actualInput = tr.querySelector(".actual-input");
-    const diffCell = tr.querySelector(".diff-cell");
-
-    function refreshDiff() {
-      const diff = (data.presupuestado || 0) - (data.real || 0);
-      diffCell.textContent = money(diff);
-      diffCell.classList.remove("over", "under");
-      if (diff < 0) diffCell.classList.add("over");
-      else if (diff > 0) diffCell.classList.add("under");
-    }
-
-    conceptInput.value = data.concepto;
-    budgetInput.value = formatMoneyInput(data.presupuestado);
-    actualInput.value = formatMoneyInput(data.real);
-    refreshDiff();
-
-    conceptInput.addEventListener("input", () => {
-      data.concepto = conceptInput.value;
-      saveData();
-      renderSummaryAndCharts();
-    });
-    wireMoneyInput(budgetInput, (value) => {
-      data.presupuestado = value;
-      refreshDiff();
-      saveData();
-      renderSummaryAndCharts();
-    });
-    wireMoneyInput(actualInput, (value) => {
-      data.real = value;
-      refreshDiff();
-      saveData();
-      renderSummaryAndCharts();
-    });
-    return tr;
-  }
-
-  document.getElementById("addEgreso").addEventListener("click", () => {
-    const month = ensureMonth(monthKey(currentYear, currentMonth));
-    month.egresos.push(makeRow(""));
-    saveData();
-    render();
-  });
-
-  const hormigaContainer = document.getElementById("hormigaContainer");
-  const seccionHormigaTemplate = document.getElementById("seccionHormigaTemplate");
-  const itemHormigaTemplate = document.getElementById("itemHormigaTemplate");
-
-  function makeHormigaItem(nombre) {
-    return { id: uid(), nombre: nombre || "", saldo: 0 };
-  }
-
-  function buildItemHormigaRow(seccion, item, onSaldoChange) {
-    const frag = itemHormigaTemplate.content.cloneNode(true);
-    const tr = frag.querySelector("tr");
-    const nameInput = tr.querySelector(".hormiga-item-name");
-    const saldoInput = tr.querySelector(".hormiga-item-saldo");
-    const delBtn = tr.querySelector(".del-item-btn");
-
-    nameInput.value = item.nombre;
-    saldoInput.value = formatMoneyInput(item.saldo);
-
-    nameInput.addEventListener("input", () => {
-      item.nombre = nameInput.value;
-      saveData();
-    });
-    wireMoneyInput(saldoInput, (value) => {
-      item.saldo = value;
-      saveData();
-      onSaldoChange();
-    });
-    delBtn.addEventListener("click", () => {
-      seccion.items = seccion.items.filter((it) => it.id !== item.id);
-      saveData();
-      renderHormiga();
-    });
-    return tr;
-  }
-
-  function buildSeccionHormiga(seccion) {
-    const frag = seccionHormigaTemplate.content.cloneNode(true);
-    const wrap = frag.querySelector(".hormiga-seccion");
-    const nameInput = wrap.querySelector(".hormiga-seccion-name");
-    const totalEl = wrap.querySelector(".hormiga-seccion-total");
-    const addItemBtn = wrap.querySelector(".add-item-btn");
-    const delSeccionBtn = wrap.querySelector(".del-seccion-btn");
-    const itemsBody = wrap.querySelector(".hormiga-items-table tbody");
-
-    function refreshTotal() {
-      totalEl.textContent = money(seccionHormigaTotal(seccion));
-    }
-
-    nameInput.value = seccion.nombre;
-    refreshTotal();
-
-    nameInput.addEventListener("input", () => {
-      seccion.nombre = nameInput.value;
-      saveData();
-    });
-
-    function renderItems() {
-      itemsBody.innerHTML = "";
-      (seccion.items || []).forEach((item) => {
-        itemsBody.appendChild(buildItemHormigaRow(seccion, item, () => {
-          refreshTotal();
-          renderSummaryAndCharts();
-        }));
-      });
-    }
-    renderItems();
-
-    addItemBtn.addEventListener("click", () => {
-      seccion.items.push(makeHormigaItem(""));
-      saveData();
-      renderItems();
-    });
-
-    delSeccionBtn.addEventListener("click", () => {
-      const month = ensureMonth(monthKey(currentYear, currentMonth));
-      month.gastosHormiga = month.gastosHormiga.filter((s) => s.id !== seccion.id);
-      saveData();
-      renderHormiga();
-    });
-
-    return wrap;
-  }
-
-  function renderHormiga() {
-    const month = ensureMonth(monthKey(currentYear, currentMonth));
-    hormigaContainer.innerHTML = "";
-    month.gastosHormiga.forEach((seccion) => {
-      hormigaContainer.appendChild(buildSeccionHormiga(seccion));
-    });
-    renderSummaryAndCharts();
-  }
-
-  document.getElementById("addSeccionHormiga").addEventListener("click", () => {
-    const month = ensureMonth(monthKey(currentYear, currentMonth));
-    month.gastosHormiga.push({ id: uid(), nombre: "", items: [] });
-    saveData();
-    renderHormiga();
-  });
-
-  document.getElementById("resetMonthBtn").addEventListener("click", () => {
-    const key = monthKey(currentYear, currentMonth);
-    if (!confirm(`¿Vaciar todos los valores de ${MESES[currentMonth]} ${currentYear}? Esta acción no se puede deshacer.`)) return;
-    delete state.months[key];
-    ensureMonth(key);
-    saveData();
-    render();
-  });
-
-  function slugify(text) {
-    return text
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-");
-  }
-
-  function applyCurrencyFormat(ws) {
-    if (!ws["!ref"]) return;
-    const range = XLSX.utils.decode_range(ws["!ref"]);
-    for (let r = range.s.r; r <= range.e.r; r++) {
-      for (let c = range.s.c; c <= range.e.c; c++) {
-        const cell = ws[XLSX.utils.encode_cell({ r, c })];
-        if (cell && typeof cell.v === "number") {
-          cell.z = '"$"#,##0';
-        }
+  async function initCloud() {
+    if (!window.claude || typeof window.claude.use !== "function") { setStatus("Datos guardados en este navegador."); return; }
+    try {
+      const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+      if (!db || !user) { setStatus("Datos guardados en este navegador."); return; }
+      const id = await user.id();
+      if (!id) { setStatus("Datos guardados en este navegador."); return; }
+      const ref = db.doc(`data/users/${id}/control-gastos`);
+      const snap = await ref.get();
+      const remote = snap.exists ? snap.data() : null;
+      cloud = { ref };
+      if (remote && isValidState(remote.state) && (Number(remote.updatedAt) || 0) > (state.updatedAt || 0)) {
+        state = normalizeState(remote.state);
+        state.updatedAt = Number(remote.updatedAt) || state.updatedAt;
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* noop */ }
+        renderAll();
+        setStatus("Datos cargados desde tu cuenta.");
+      } else if (Object.keys(state.months).length) {
+        cloudDirty = true; flushCloud();
+      } else {
+        setStatus("Tus datos se guardan en tu cuenta.");
       }
+    } catch (e) {
+      setStatus("Datos guardados en este navegador.");
     }
   }
 
-  document.getElementById("exportExcelBtn").addEventListener("click", () => {
-    if (typeof XLSX === "undefined") {
-      alert("No se pudo cargar la librería de exportación a Excel. Verifica tu conexión a internet e inténtalo de nuevo.");
+  /* ---------- UI: utilidades ---------- */
+  function setStatus(t) { $("status").textContent = t; }
+  let toastTimer = null;
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+  }
+  function confirmDialog(title, text, okLabel) {
+    return new Promise((resolve) => {
+      const modal = $("modal"), ok = $("modalOk"), cancel = $("modalCancel");
+      $("modalTitle").textContent = title; $("modalText").textContent = text; ok.textContent = okLabel || "Aceptar";
+      modal.hidden = false; ok.focus();
+      const done = (v) => {
+        modal.hidden = true;
+        ok.removeEventListener("click", onOk); cancel.removeEventListener("click", onCancel);
+        modal.removeEventListener("click", onBackdrop); document.removeEventListener("keydown", onKey);
+        resolve(v);
+      };
+      const onOk = () => done(true), onCancel = () => done(false);
+      const onBackdrop = (e) => { if (e.target === modal) done(false); };
+      const onKey = (e) => { if (e.key === "Escape") done(false); };
+      ok.addEventListener("click", onOk); cancel.addEventListener("click", onCancel);
+      modal.addEventListener("click", onBackdrop); document.addEventListener("keydown", onKey);
+    });
+  }
+  function signClass(el, n) { el.classList.toggle("pos", n > 0); el.classList.toggle("neg", n < 0); }
+  function tpl(id) { return $(id).content.firstElementChild.cloneNode(true); }
+
+  /* ---------- Selector de mes ---------- */
+  function renderPicker() {
+    const { y, m } = splitKey(currentKey);
+    const ms = $("monthSelect"), ys = $("yearSelect");
+    if (!ms.options.length) ms.innerHTML = MESES.map((n, i) => `<option value="${i + 1}">${n}</option>`).join("");
+    const years = new Set();
+    for (let i = today.getFullYear() - 5; i <= today.getFullYear() + 3; i++) years.add(i);
+    Object.keys(state.months).forEach((k) => years.add(splitKey(k).y));
+    years.add(y);
+    ys.innerHTML = [...years].sort().map((v) => `<option value="${v}">${v}</option>`).join("");
+    ms.value = String(m); ys.value = String(y);
+  }
+  function goTo(k) { currentKey = k; ensureMonth(k); renderAll(); }
+
+  /* ---------- Render: gastos fijos ---------- */
+  function renderEgresos() {
+    const body = $("egresosBody");
+    body.innerHTML = "";
+    cur().egresos.forEach((e) => {
+      const tr = tpl("tplEgreso");
+      const concepto = tr.querySelector(".concepto");
+      const dif = tr.querySelector(".diferencia");
+      concepto.value = e.concepto;
+      concepto.addEventListener("input", () => { e.concepto = concepto.value; save(); scheduleCharts(); });
+      const updDif = () => { const d = (e.presupuestado || 0) - (e.real || 0); dif.textContent = money(d); signClass(dif, d); };
+      wireMoneyInput(tr.querySelector(".presupuestado"), e.presupuestado, (v) => { e.presupuestado = v; updDif(); onDataChange(); });
+      wireMoneyInput(tr.querySelector(".real"), e.real, (v) => { e.real = v; updDif(); onDataChange(); });
+      updDif();
+      if (!e.fijo) {
+        const del = document.createElement("button");
+        del.type = "button"; del.className = "icon-btn danger"; del.textContent = "✕";
+        del.setAttribute("aria-label", "Eliminar fila"); del.title = "Eliminar fila";
+        del.addEventListener("click", () => {
+          const m = cur(); m.egresos = m.egresos.filter((x) => x.id !== e.id);
+          save(); renderEgresos(); onDataChange();
+        });
+        tr.querySelector(".col-action").appendChild(del);
+      }
+      body.appendChild(tr);
+    });
+  }
+
+  /* ---------- Render: gastos hormiga ---------- */
+  function renderHormiga() {
+    const list = $("hormigaList");
+    list.innerHTML = "";
+    const secciones = cur().gastosHormiga;
+    $("hormigaEmpty").hidden = secciones.length > 0;
+    secciones.forEach((s) => {
+      const el = tpl("tplSeccion");
+      const name = el.querySelector(".h-section-name");
+      const totalEl = el.querySelector(".h-section-total");
+      const tbody = el.querySelector(".h-items");
+      name.value = s.nombre;
+      name.addEventListener("input", () => { s.nombre = name.value; save(); scheduleCharts(); });
+      const updTotal = () => { totalEl.textContent = money(seccionTotal(s)); };
+      el.querySelector(".del-section").addEventListener("click", async () => {
+        const ok = await confirmDialog("Eliminar sección", `¿Eliminar la sección “${s.nombre || "sin nombre"}” y sus sub-secciones?`, "Eliminar");
+        if (!ok) return;
+        const m = cur(); m.gastosHormiga = m.gastosHormiga.filter((x) => x.id !== s.id);
+        save(); renderHormiga(); onDataChange();
+      });
+      const addItemRow = (it, focus) => {
+        const tr = tpl("tplItem");
+        const n = tr.querySelector(".item-name");
+        n.value = it.nombre;
+        n.addEventListener("input", () => { it.nombre = n.value; save(); scheduleCharts(); });
+        wireMoneyInput(tr.querySelector(".item-saldo"), it.saldo, (v) => { it.saldo = v; updTotal(); onDataChange(); });
+        tr.querySelector(".del-item").addEventListener("click", () => {
+          s.items = s.items.filter((x) => x.id !== it.id);
+          tr.remove(); updTotal(); save(); onDataChange();
+        });
+        tbody.appendChild(tr);
+        if (focus) n.focus();
+      };
+      s.items.forEach((it) => addItemRow(it, false));
+      el.querySelector(".add-item").addEventListener("click", () => {
+        const it = { id: uid(), nombre: "", saldo: 0 };
+        s.items.push(it); save(); addItemRow(it, true); onDataChange();
+      });
+      updTotal();
+      list.appendChild(el);
+    });
+  }
+
+  /* ---------- Render: totales ---------- */
+  function renderTotals() {
+    const m = cur();
+    const t = monthTotals(m);
+    $("totalGastos").textContent = money(t.egresosReal);
+    $("gastosDetalle").textContent = `Fijos ${money(t.egresosRealTabla)} · Hormiga ${money(t.hormigaTotal)}`;
+    $("saldoMes").textContent = money(t.saldo);
+    $("cardSaldo").classList.toggle("negative", t.saldo < 0);
+    const ahorro = ahorroAcumuladoHasta(currentKey);
+    $("ahorroAcumulado").textContent = money(ahorro);
+    $("totPresupuestado").textContent = money(t.egresosPresupuestado);
+    $("totReal").textContent = money(t.egresosRealTabla);
+    const dif = t.egresosPresupuestado - t.egresosRealTabla;
+    const difEl = $("totDiferencia"); difEl.textContent = money(dif); signClass(difEl, dif);
+    $("hormigaTotal").textContent = "Total " + money(t.hormigaTotal);
+  }
+
+  function renderIngreso() {
+    const inp = $("ingresoReal");
+    if (document.activeElement === inp) inp.blur();
+    inp.value = formatMoneyInput(cur().ingresoReal);
+  }
+
+  /* ---------- Gráficos ---------- */
+  let chartCat = null, chartHist = null, chartTimer = null;
+  function scheduleCharts() { clearTimeout(chartTimer); chartTimer = setTimeout(renderCharts, 250); }
+  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function renderCharts() {
+    const msgCat = $("msgCategorias"), msgHist = $("msgHistorial");
+    if (typeof window.Chart === "undefined") {
+      [msgCat, msgHist].forEach((el) => { el.hidden = false; el.textContent = "Los gráficos no están disponibles (no se pudo cargar Chart.js; revisa tu conexión a internet)."; });
+      document.querySelectorAll(".chart-box").forEach((b) => { b.hidden = true; });
       return;
     }
-    const key = monthKey(currentYear, currentMonth);
-    const month = ensureMonth(key);
-    const mesNombre = MESES[currentMonth];
-    const totals = monthTotals(month);
-    const ahorroAcumulado = ahorroAcumuladoHasta(key);
+    const text = cssVar("--text") || "#1c1f2e";
+    const muted = cssVar("--muted") || "#6b7088";
+    const border = cssVar("--border") || "#e3e6f0";
+    const surface = cssVar("--surface") || "#fff";
+    const m = cur();
 
-    const wb = XLSX.utils.book_new();
-
-    const resumenAOA = [
-      ["Control de Gastos y Ahorro"],
-      [`${mesNombre} ${currentYear}`],
-      [],
-      ["Concepto", "Valor"],
-      ["Ingresos del mes", totals.ingresosReal],
-      ["Gastos del mes", totals.egresosReal],
-      ["  · Gastos fijos", totals.egresosRealTabla],
-      ["  · Gastos hormiga", totals.hormigaTotal],
-      ["Saldo del mes", totals.saldo],
-      ["Ahorro acumulado", ahorroAcumulado]
-    ];
-    const wsResumen = XLSX.utils.aoa_to_sheet(resumenAOA);
-    wsResumen["!cols"] = [{ wch: 22 }, { wch: 16 }];
-    applyCurrencyFormat(wsResumen);
-    XLSX.utils.book_append_sheet(wb, wsResumen, "Resumen");
-
-    const egresosAOA = [["Concepto", "Presupuestado", "Real", "Diferencia"]];
-    month.egresos.forEach((r) => {
-      const presu = r.presupuestado || 0;
-      const real = r.real || 0;
-      egresosAOA.push([r.concepto || "(sin nombre)", presu, real, presu - real]);
-    });
-    egresosAOA.push(["Total", totals.egresosPresupuestado, totals.egresosReal, totals.egresosPresupuestado - totals.egresosReal]);
-    const wsEgresos = XLSX.utils.aoa_to_sheet(egresosAOA);
-    wsEgresos["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
-    applyCurrencyFormat(wsEgresos);
-    XLSX.utils.book_append_sheet(wb, wsEgresos, "Gastos");
-
-    const hormigaAOA = [["Sección", "Sub-sección", "Saldo"]];
-    month.gastosHormiga.forEach((seccion) => {
-      (seccion.items || []).forEach((item) => {
-        hormigaAOA.push([seccion.nombre || "(sin nombre)", item.nombre || "(sin nombre)", item.saldo || 0]);
+    // Dona: gastos por categoría
+    const labels = [], data = [];
+    m.egresos.forEach((e) => { if (e.real > 0) { labels.push(e.concepto || "Sin nombre"); data.push(e.real); } });
+    m.gastosHormiga.forEach((s) => s.items.forEach((it) => {
+      if (it.saldo > 0) { labels.push(`🐜 ${s.nombre || "Sección"} · ${it.nombre || "Sub-sección"}`); data.push(it.saldo); }
+    }));
+    const boxCat = $("chartCategorias").parentElement;
+    if (!data.length) {
+      if (chartCat) { chartCat.destroy(); chartCat = null; }
+      boxCat.hidden = true; msgCat.hidden = false;
+      msgCat.textContent = "Cuando registres gastos reales este mes, aquí verás su distribución.";
+    } else {
+      boxCat.hidden = false; msgCat.hidden = true;
+      const colors = data.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
+      if (chartCat) chartCat.destroy();
+      chartCat = new Chart($("chartCategorias"), {
+        type: "doughnut",
+        data: { labels, datasets: [{ data, backgroundColor: colors, borderColor: surface, borderWidth: 2 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: "58%",
+          plugins: {
+            legend: { position: window.innerWidth < 700 ? "bottom" : "right", labels: { color: text, boxWidth: 12, font: { family: "Inter", size: 12 } } },
+            tooltip: { callbacks: { label: (c) => ` ${c.label}: ${money(c.parsed)}` } },
+          },
+        },
       });
-    });
-    if (hormigaAOA.length > 1) {
-      hormigaAOA.push(["Total", "", totals.hormigaTotal]);
-      const wsHormiga = XLSX.utils.aoa_to_sheet(hormigaAOA);
-      wsHormiga["!cols"] = [{ wch: 20 }, { wch: 24 }, { wch: 16 }];
-      applyCurrencyFormat(wsHormiga);
-      XLSX.utils.book_append_sheet(wb, wsHormiga, "Gastos Hormiga");
     }
 
-    XLSX.writeFile(wb, `presupuesto-${slugify(mesNombre)}-${currentYear}.xlsx`);
-  });
+    // Barras: historial de saldo (últimos 12 meses)
+    const keys = []; for (let i = 11; i >= 0; i--) keys.push(shiftKey(currentKey, -i));
+    const saldos = keys.map((k) => (state.months[k] ? monthTotals(state.months[k]).saldo : 0));
+    const income = cssVar("--income") || "#059669", expense = cssVar("--expense") || "#dc2626";
+    msgHist.hidden = true; $("chartHistorial").parentElement.hidden = false;
+    if (chartHist) chartHist.destroy();
+    chartHist = new Chart($("chartHistorial"), {
+      type: "bar",
+      data: { labels: keys.map((k) => labelOf(k, true)), datasets: [{ label: "Saldo", data: saldos, backgroundColor: saldos.map((v) => (v >= 0 ? income : expense)), borderRadius: 6 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (c) => labelOf(keys[c[0].dataIndex]), label: (c) => ` Saldo: ${money(c.parsed.y)}` } } },
+        scales: {
+          x: { ticks: { color: muted, font: { family: "Inter", size: 11 } }, grid: { display: false } },
+          y: { ticks: { color: muted, font: { family: "Inter", size: 11 }, callback: (v) => money(v) }, grid: { color: border } },
+        },
+      },
+    });
+  }
 
-  document.getElementById("exportBtn").addEventListener("click", () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  /* ---------- Orquestación ---------- */
+  function onDataChange() { save(); renderTotals(); scheduleCharts(); }
+  function renderAll() {
+    renderPicker();
+    renderIngreso();
+    renderEgresos();
+    renderHormiga();
+    renderTotals();
+    renderCharts();
+  }
+
+  /* ---------- Descargas ---------- */
+  async function offerDownload(filename, data, mime) {
+    try {
+      if (window.claude && typeof window.claude.use === "function") {
+        const dl = await window.claude.use("downloads");
+        if (dl) {
+          try { await dl.save({ filename, data }); toast("Archivo listo: " + filename); return; }
+          catch (e) {
+            if (e && e.code === "declined") return;
+            if (e && e.code === "rate_limited") { toast("Espera un momento e inténtalo de nuevo."); return; }
+          }
+        }
+      }
+    } catch (e) { /* usar método del navegador */ }
+    const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `respaldo-control-gastos-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  });
+    a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
 
-  document.getElementById("importInput").addEventListener("change", (e) => {
-    const file = e.target.files[0];
+  function exportExcel() {
+    if (typeof window.XLSX === "undefined") { toast("No se pudo cargar la librería de Excel (revisa tu conexión)."); return; }
+    const m = cur();
+    const t = monthTotals(m);
+    const wb = XLSX.utils.book_new();
+    const resumen = [
+      ["Control de Gastos y Ahorro", labelOf(currentKey)],
+      [],
+      ["Concepto", "Valor"],
+      ["Ingresos del mes", t.ingresosReal],
+      ["Gastos del mes", t.egresosReal],
+      ["  Gastos fijos", t.egresosRealTabla],
+      ["  Gastos hormiga", t.hormigaTotal],
+      ["Presupuesto gastos fijos", t.egresosPresupuestado],
+      ["Saldo del mes", t.saldo],
+      ["Ahorro acumulado", ahorroAcumuladoHasta(currentKey)],
+    ];
+    const ws1 = XLSX.utils.aoa_to_sheet(resumen); ws1["!cols"] = [{ wch: 28 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "Resumen");
+
+    const gastos = [["Concepto", "Presupuestado", "Real", "Diferencia"]];
+    m.egresos.forEach((e) => gastos.push([e.concepto, e.presupuestado, e.real, e.presupuestado - e.real]));
+    gastos.push(["Total", t.egresosPresupuestado, t.egresosRealTabla, t.egresosPresupuestado - t.egresosRealTabla]);
+    const ws2 = XLSX.utils.aoa_to_sheet(gastos); ws2["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, ws2, "Gastos");
+
+    const hormigaRows = [];
+    m.gastosHormiga.forEach((s) => s.items.forEach((it) => hormigaRows.push([s.nombre, it.nombre, it.saldo])));
+    if (hormigaRows.length) {
+      const ws3 = XLSX.utils.aoa_to_sheet([["Sección", "Sub-sección", "Saldo"], ...hormigaRows, ["Total", "", t.hormigaTotal]]);
+      ws3["!cols"] = [{ wch: 22 }, { wch: 26 }, { wch: 16 }];
+      XLSX.utils.book_append_sheet(wb, ws3, "Gastos Hormiga");
+    }
+    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    offerDownload(`control-gastos-${currentKey}.xlsx`, new Uint8Array(buf), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  }
+
+  function exportJson() {
+    const d = new Date();
+    const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    offerDownload(`respaldo-control-gastos-${stamp}.json`, JSON.stringify(state, null, 2), "application/json");
+  }
+
+  async function importJson(file) {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(reader.result);
-        if (!parsed.months) throw new Error("Formato inválido");
-        state = parsed;
-        saveData();
-        render();
-        alert("Respaldo importado correctamente.");
-      } catch (err) {
-        alert("No se pudo importar el archivo: formato inválido.");
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!isValidState(parsed)) throw new Error("formato");
+      const n = Object.keys(parsed.months).length;
+      const ok = await confirmDialog("Importar respaldo", `El respaldo tiene ${n} mes(es). Reemplazará todos los datos actuales. ¿Continuar?`, "Importar");
+      if (!ok) return;
+      state = normalizeState(parsed);
+      save(); renderAll(); toast("Respaldo importado.");
+    } catch (e) {
+      toast("El archivo no es un respaldo válido.");
+    }
+  }
+
+  /* ---------- Eventos ---------- */
+  $("prevMonth").addEventListener("click", () => goTo(shiftKey(currentKey, -1)));
+  $("nextMonth").addEventListener("click", () => goTo(shiftKey(currentKey, 1)));
+  $("monthSelect").addEventListener("change", (e) => goTo(keyOf(splitKey(currentKey).y, Number(e.target.value))));
+  $("yearSelect").addEventListener("change", (e) => goTo(keyOf(Number(e.target.value), splitKey(currentKey).m)));
+
+  wireMoneyInput($("ingresoReal"), 0, (v) => { cur().ingresoReal = v; onDataChange(); });
+
+  $("addEgreso").addEventListener("click", () => {
+    cur().egresos.push({ id: uid(), concepto: "", presupuestado: 0, real: 0, fijo: false });
+    save(); renderEgresos(); renderTotals();
+    const rows = $("egresosBody").querySelectorAll(".concepto");
+    rows[rows.length - 1].focus();
+  });
+  $("addSeccion").addEventListener("click", () => {
+    cur().gastosHormiga.push({ id: uid(), nombre: "", items: [] });
+    save(); renderHormiga(); renderTotals();
+    const names = $("hormigaList").querySelectorAll(".h-section-name");
+    names[names.length - 1].focus();
+  });
+  $("exportExcel").addEventListener("click", exportExcel);
+  $("exportJson").addEventListener("click", exportJson);
+  $("importJson").addEventListener("change", (e) => { importJson(e.target.files[0]); e.target.value = ""; });
+  $("resetMonth").addEventListener("click", async () => {
+    const ok = await confirmDialog("Vaciar mes actual", `Se borrarán todos los datos de ${labelOf(currentKey)} y se restaurarán los valores por defecto.`, "Vaciar");
+    if (!ok) return;
+    state.months[currentKey] = newMonth();
+    save(); renderAll(); toast("Mes vaciado.");
   });
 
-  let chartEgresos = null;
-  let chartHistorial = null;
-
-  function renderSummaryAndCharts() {
-    const key = monthKey(currentYear, currentMonth);
-    const month = ensureMonth(key);
-
-    const totals = monthTotals(month);
-    const { egresosReal: totalEgresosReal, saldo } = totals;
-
-    document.getElementById("sumEgresos").textContent = money(totalEgresosReal);
-    const saldoEl = document.getElementById("sumSaldo");
-    saldoEl.textContent = money(saldo);
-    const balanceCard = document.getElementById("balanceCard");
-    balanceCard.classList.remove("positive", "negative");
-    balanceCard.classList.add(saldo >= 0 ? "positive" : "negative");
-
-    const sortedKeys = Object.keys(state.months).sort();
-    let acumulado = 0;
-    const historyPoints = [];
-    sortedKeys.forEach((k) => {
-      const t = monthTotals(state.months[k]);
-      acumulado += t.saldo;
-      if (k <= key) {
-        historyPoints.push({ key: k, acumulado, saldo: t.saldo });
-      }
-    });
-    const ahorroAcumulado = historyPoints.length ? historyPoints[historyPoints.length - 1].acumulado : 0;
-    document.getElementById("sumAhorro").textContent = money(ahorroAcumulado);
-
-    const categorias = month.egresos
-      .filter((r) => (r.real || 0) > 0)
-      .map((r) => ({ label: r.concepto || "(sin nombre)", value: r.real }))
-      .concat(
-        month.gastosHormiga.flatMap((seccion) =>
-          (seccion.items || [])
-            .filter((it) => (it.saldo || 0) > 0)
-            .map((it) => ({
-              label: `${seccion.nombre || "Hormiga"}: ${it.nombre || "(sin nombre)"}`,
-              value: it.saldo
-            }))
-        )
-      );
-
-    const chartCanvas = document.getElementById("chartEgresos");
-    const emptyHint = document.getElementById("chartEmptyHint");
-    const chartsAvailable = typeof Chart !== "undefined";
-    if (!chartsAvailable) {
-      emptyHint.textContent = "Los gráficos no se pudieron cargar (sin conexión a internet).";
-      emptyHint.style.display = "flex";
-      chartCanvas.style.display = "none";
-      document.getElementById("chartHistorial").style.display = "none";
-      return;
-    }
-    if (categorias.length === 0) {
-      emptyHint.style.display = "flex";
-      chartCanvas.style.display = "none";
-      if (chartEgresos) { chartEgresos.destroy(); chartEgresos = null; }
-    } else {
-      emptyHint.style.display = "none";
-      chartCanvas.style.display = "block";
-      const palette = ["#4f46e5", "#06b6d4", "#f59e0b", "#ef4444", "#10b981", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#6366f1"];
-      const data = {
-        labels: categorias.map((c) => c.label),
-        datasets: [{
-          data: categorias.map((c) => c.value),
-          backgroundColor: categorias.map((_, i) => palette[i % palette.length]),
-          borderWidth: 0
-        }]
-      };
-      if (chartEgresos) {
-        chartEgresos.data = data;
-        chartEgresos.update();
-      } else {
-        chartEgresos = new Chart(chartCanvas, {
-          type: "doughnut",
-          data,
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { position: "right", labels: { boxWidth: 12, font: { size: 11 } } }
-            }
-          }
-        });
-      }
-    }
-
-    const histLabels = historyPoints.slice(-12).map((p) => {
-      const [y, m2] = p.key.split("-");
-      return `${MESES[Number(m2) - 1].slice(0, 3)} ${y}`;
-    });
-    const histValues = historyPoints.slice(-12).map((p) => p.saldo);
-    const histCanvas = document.getElementById("chartHistorial");
-    const histData = {
-      labels: histLabels,
-      datasets: [{
-        label: "Saldo mensual",
-        data: histValues,
-        backgroundColor: histValues.map((v) => (v >= 0 ? "#10b981" : "#ef4444")),
-        borderRadius: 4
-      }]
-    };
-    if (chartHistorial) {
-      chartHistorial.data = histData;
-      chartHistorial.update();
-    } else {
-      chartHistorial = new Chart(histCanvas, {
-        type: "bar",
-        data: histData,
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: { ticks: { callback: (v) => money(v) } }
-          }
-        }
-      });
-    }
+  let resizeTimer = null;
+  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderCharts, 300); });
+  if (window.matchMedia) {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq.addEventListener) mq.addEventListener("change", scheduleCharts);
   }
+  new MutationObserver(scheduleCharts).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
-  function buildEmptyRow(colspan, text) {
-    const tr = document.createElement("tr");
-    tr.className = "empty-row";
-    const td = document.createElement("td");
-    td.colSpan = colspan;
-    td.textContent = text;
-    tr.appendChild(td);
-    return tr;
-  }
-
-  function render() {
-    const key = monthKey(currentYear, currentMonth);
-    const month = ensureMonth(key);
-    syncPickerUI();
-
-    ingresoInput.value = formatMoneyInput(month.ingresoReal);
-
-    tablaEgresosBody.innerHTML = "";
-    if (month.egresos.length === 0) {
-      tablaEgresosBody.appendChild(buildEmptyRow(4, "Aún no hay conceptos. Usa \"+ Agregar\" para añadir uno."));
-    } else {
-      month.egresos.forEach((r) => tablaEgresosBody.appendChild(buildEgresoRow(r)));
-    }
-
-    renderHormiga();
-  }
-
-  render();
+  /* ---------- Inicio ---------- */
+  ensureMonth(currentKey);
+  renderAll();
+  initCloud();
 })();

@@ -1,161 +1,184 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Control de Gastos y Ahorro</title>
-<link rel="icon" href="data:,">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Control de Gastos y Ahorro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<div class="app">
-
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-icon">💰</span>
-      <div>
-        <h1>Control de Gastos y Ahorro</h1>
-        <p class="subtitle">Presupuesto familiar mensual</p>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-badge" aria-hidden="true">💰</span>
+        <div>
+          <h1>Control de Gastos y Ahorro</h1>
+          <p class="brand-sub">Presupuesto familiar mes a mes</p>
+        </div>
       </div>
-    </div>
-    <div class="month-picker">
-      <button id="prevMonth" class="icon-btn" title="Mes anterior">◀</button>
-      <select id="monthSelect"></select>
-      <input id="yearInput" type="number" min="2000" max="2100" />
-      <button id="nextMonth" class="icon-btn" title="Mes siguiente">▶</button>
+      <div class="month-picker" role="group" aria-label="Seleccionar mes">
+        <button type="button" class="month-arrow" id="prevMonth" aria-label="Mes anterior">◀</button>
+        <select id="monthSelect" aria-label="Mes"></select>
+        <select id="yearSelect" aria-label="Año"></select>
+        <button type="button" class="month-arrow" id="nextMonth" aria-label="Mes siguiente">▶</button>
+      </div>
     </div>
   </header>
 
-  <main>
-    <section class="summary-grid">
-      <div class="card summary-card income">
-        <span class="card-icon">💵</span>
+  <main class="container">
+    <section class="cards" aria-label="Resumen del mes">
+      <article class="card card-income">
         <span class="card-label">Ingresos del mes</span>
-        <div class="card-input-row">
-          <span class="currency-prefix">$</span>
-          <input type="text" inputmode="decimal" id="ingresoInput" class="card-value-input" placeholder="0" />
-        </div>
-      </div>
-      <div class="card summary-card expense">
-        <span class="card-icon">🧾</span>
+        <label class="money-field card-input">
+          <span class="money-prefix">$</span>
+          <input type="text" inputmode="decimal" id="ingresoReal" placeholder="0" autocomplete="off" aria-label="Ingresos del mes" />
+        </label>
+        <span class="card-hint">Escribe el total que recibiste</span>
+      </article>
+      <article class="card card-expense">
         <span class="card-label">Gastos del mes</span>
-        <span class="card-value" id="sumEgresos">$0</span>
-      </div>
-      <div class="card summary-card balance" id="balanceCard">
-        <span class="card-icon">⚖️</span>
+        <span class="card-value" id="totalGastos">$0</span>
+        <span class="card-hint" id="gastosDetalle">Fijos $0 · Hormiga $0</span>
+      </article>
+      <article class="card card-balance" id="cardSaldo">
         <span class="card-label">Saldo del mes</span>
-        <span class="card-value" id="sumSaldo">$0</span>
-      </div>
-      <div class="card summary-card savings">
-        <span class="card-icon">🏦</span>
+        <span class="card-value" id="saldoMes">$0</span>
+        <span class="card-hint">Ingresos − gastos</span>
+      </article>
+      <article class="card card-savings">
         <span class="card-label">Ahorro acumulado</span>
-        <span class="card-value" id="sumAhorro">$0</span>
-      </div>
+        <span class="card-value" id="ahorroAcumulado">$0</span>
+        <span class="card-hint">Suma de saldos hasta este mes</span>
+      </article>
     </section>
 
     <section class="panel">
-      <div class="panel-header">
+      <div class="panel-head">
         <h2>Gastos</h2>
-        <button class="add-btn" id="addEgreso">+ Agregar</button>
+        <button type="button" class="btn btn-primary" id="addEgreso">+ Agregar</button>
       </div>
       <div class="table-wrap">
-        <table id="tablaEgresos">
+        <table class="data-table">
           <thead>
-            <tr><th>Concepto</th><th>Presupuestado</th><th>Real</th><th>Diferencia</th></tr>
+            <tr>
+              <th>Concepto</th>
+              <th class="num">Presupuestado</th>
+              <th class="num">Real</th>
+              <th class="num">Diferencia</th>
+              <th class="col-action" aria-label="Acciones"></th>
+            </tr>
           </thead>
-          <tbody></tbody>
+          <tbody id="egresosBody"></tbody>
+          <tfoot>
+            <tr>
+              <td>Total</td>
+              <td class="num" id="totPresupuestado">$0</td>
+              <td class="num" id="totReal">$0</td>
+              <td class="num" id="totDiferencia">$0</td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </section>
 
     <section class="panel">
-      <div class="panel-header">
+      <div class="panel-head">
         <h2>🐜 Gastos hormiga</h2>
-        <button class="add-btn" id="addSeccionHormiga">+ Agregar sección</button>
+        <div class="panel-head-right">
+          <span class="pill" id="hormigaTotal">Total $0</span>
+          <button type="button" class="btn btn-primary" id="addSeccion">+ Agregar sección</button>
+        </div>
       </div>
-      <p class="hormiga-hint">Agrupa gastos pequeños por sección y sub-sección. Ej.: Comida → Empanada, Carro → Llantas, Iglesia → Ofrenda.</p>
-      <div id="hormigaContainer"></div>
-      <p class="empty-hint-static" id="hormigaEmptyHint">Aún no hay secciones. Usa "+ Agregar sección" para crear una.</p>
+      <p class="panel-note">Agrupa los gastos pequeños: Comida → Empanada, Carro → Llantas, Iglesia → Ofrenda.</p>
+      <div id="hormigaList" class="hormiga-list"></div>
+      <p class="empty" id="hormigaEmpty">Aún no hay secciones. Usa “+ Agregar sección” para crear la primera.</p>
     </section>
 
-    <section class="panels">
-      <div class="panel">
-        <div class="panel-header">
-          <h2>Gastos por categoría</h2>
-        </div>
-        <div class="chart-wrap">
-          <canvas id="chartEgresos"></canvas>
-          <p class="empty-hint" id="chartEmptyHint">Registra gastos reales para ver la distribución.</p>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-header">
-          <h2>Historial de saldo</h2>
-        </div>
-        <div class="chart-wrap">
-          <canvas id="chartHistorial"></canvas>
-        </div>
-      </div>
+    <section class="charts">
+      <article class="panel chart-panel">
+        <h2>Gastos por categoría</h2>
+        <div class="chart-box"><canvas id="chartCategorias" aria-label="Gráfico de gastos por categoría"></canvas></div>
+        <p class="chart-msg" id="msgCategorias" hidden></p>
+      </article>
+      <article class="panel chart-panel">
+        <h2>Historial de saldo</h2>
+        <div class="chart-box"><canvas id="chartHistorial" aria-label="Gráfico de historial de saldo"></canvas></div>
+        <p class="chart-msg" id="msgHistorial" hidden></p>
+      </article>
     </section>
 
-    <section class="panel">
-      <div class="panel-header">
-        <h2>Datos</h2>
-      </div>
-      <div class="data-actions">
-        <button id="exportExcelBtn" class="primary-btn">📊 Exportar a Excel</button>
-        <button id="exportBtn" class="secondary-btn">⬇ Exportar respaldo (JSON)</button>
-        <label class="secondary-btn file-label">
-          ⬆ Importar respaldo
-          <input type="file" id="importInput" accept="application/json" hidden />
+    <section class="panel actions-panel">
+      <h2>Datos</h2>
+      <div class="actions">
+        <button type="button" class="btn btn-excel" id="exportExcel">Exportar a Excel</button>
+        <button type="button" class="btn btn-outline" id="exportJson">Exportar respaldo JSON</button>
+        <label class="btn btn-outline file-btn">
+          Importar respaldo JSON
+          <input type="file" id="importJson" accept=".json,application/json" hidden />
         </label>
-        <button id="resetMonthBtn" class="danger-btn">Vaciar mes actual</button>
+        <button type="button" class="btn btn-danger-outline" id="resetMonth">Vaciar mes actual</button>
       </div>
+      <p class="status" id="status" aria-live="polite"></p>
     </section>
   </main>
 
-  <footer>
-    <p>Tus datos se guardan solo en este navegador (localStorage). Exporta un respaldo periódicamente.</p>
-  </footer>
-</div>
-
-<template id="rowEgresoTemplate">
-  <tr>
-    <td><input type="text" class="concept-input" placeholder="Concepto" /></td>
-    <td><input type="text" inputmode="decimal" class="budget-input" placeholder="0" /></td>
-    <td><input type="text" inputmode="decimal" class="actual-input" placeholder="0" /></td>
-    <td class="diff-cell">$0</td>
-  </tr>
-</template>
-
-<template id="seccionHormigaTemplate">
-  <div class="hormiga-seccion">
-    <div class="hormiga-seccion-header">
-      <input type="text" class="hormiga-seccion-name" placeholder="Sección (ej. Comida)" />
-      <span class="hormiga-seccion-total">$0</span>
-      <button class="add-item-btn" title="Agregar sub-sección">+ Sub-sección</button>
-      <button class="del-seccion-btn" title="Eliminar sección">✕</button>
+  <div class="modal-backdrop" id="modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h3 id="modalTitle">¿Seguro?</h3>
+      <p id="modalText"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" id="modalCancel">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="modalOk">Aceptar</button>
+      </div>
     </div>
-    <table class="hormiga-items-table">
-      <thead><tr><th>Sub-sección</th><th>Saldo</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <p class="hormiga-empty-items">Sin sub-secciones aún. Usa "+ Sub-sección".</p>
   </div>
-</template>
 
-<template id="itemHormigaTemplate">
-  <tr>
-    <td><input type="text" class="hormiga-item-name" placeholder="Sub-sección (ej. Empanada)" /></td>
-    <td><input type="text" inputmode="decimal" class="hormiga-item-saldo" placeholder="0" /></td>
-    <td><button class="del-item-btn" title="Eliminar">✕</button></td>
-  </tr>
-</template>
+  <div class="toast" id="toast" hidden></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="app.js"></script>
+  <!-- Templates de fila -->
+  <template id="tplEgreso">
+    <tr>
+      <td><input type="text" class="cell-input concepto" aria-label="Concepto" /></td>
+      <td class="num"><label class="money-field"><span class="money-prefix">$</span><input type="text" inputmode="decimal" class="cell-input presupuestado" placeholder="0" aria-label="Presupuestado" /></label></td>
+      <td class="num"><label class="money-field"><span class="money-prefix">$</span><input type="text" inputmode="decimal" class="cell-input real" placeholder="0" aria-label="Real" /></label></td>
+      <td class="num diferencia">$0</td>
+      <td class="col-action"></td>
+    </tr>
+  </template>
+
+  <template id="tplSeccion">
+    <div class="h-section">
+      <div class="h-section-head">
+        <input type="text" class="cell-input h-section-name" placeholder="Nombre de la sección" aria-label="Nombre de la sección" />
+        <span class="h-section-total">$0</span>
+        <button type="button" class="icon-btn danger del-section" aria-label="Eliminar sección" title="Eliminar sección">✕</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table small">
+          <thead>
+            <tr><th>Sub-sección</th><th class="num">Saldo</th><th class="col-action" aria-label="Acciones"></th></tr>
+          </thead>
+          <tbody class="h-items"></tbody>
+        </table>
+      </div>
+      <button type="button" class="btn btn-soft add-item">+ Sub-sección</button>
+    </div>
+  </template>
+
+  <template id="tplItem">
+    <tr>
+      <td><input type="text" class="cell-input item-name" placeholder="Ej. Empanada" aria-label="Sub-sección" /></td>
+      <td class="num"><label class="money-field"><span class="money-prefix">$</span><input type="text" inputmode="decimal" class="cell-input item-saldo" placeholder="0" aria-label="Saldo" /></label></td>
+      <td class="col-action"><button type="button" class="icon-btn danger del-item" aria-label="Eliminar sub-sección" title="Eliminar">✕</button></td>
+    </tr>
+  </template>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
